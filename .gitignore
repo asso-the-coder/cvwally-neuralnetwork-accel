@@ -1,0 +1,28 @@
+# Private working material (tracked in a separate private repo)
+.dev/
+admin/
+AGENTS.md
+CLAUDE.md
+.claude/
+.codex/
+*.log
+
+# Build outputs, downloaded third-party code and models
+build/
+third_party/
+*.o
+*.elf
+*.a
+*.so
+*.tflite
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
