@@ -23,9 +23,24 @@ RV64IMC RISC-V processor, evaluated at the ISA level on Spike and at the RTL lev
 
 ## Quick start
 
-_Planned workflow (scripts not yet implemented):_
+The bare-metal runtime tests are available; model and benchmark scripts are planned.
 
-1. Setup — `scripts/setup_toolchain.sh` (RISC-V GCC + Spike at pinned versions)
+1. Setup and test the pinned RISC-V GCC + Spike toolchain (Linux x86_64):
+
+   ```bash
+   sudo apt-get install build-essential device-tree-compiler curl git python3 python3-venv
+   scripts/setup_toolchain.sh
+   source scripts/env.sh
+   make
+   scripts/run_tests.sh
+   ```
+
+   Tools install under `$HOME/opt/cvwally`; set `TOOLS_DIR` before setup and activation to
+   use another location. Tests check HTIF output, exit status, illegal FP traps, and the
+   linked program's instruction set. All four checks should print `PASS`.
+   `make run-hello` runs the hello program directly on `spike --isa=rv64imc` without pk.
+   GCC uses `rv64imc_zicsr/lp64` for CSR access and the compatible `rv64im/lp64` newlib
+   multilib. `make clean && make` rebuilds the programs.
 2. Model — `scripts/get_model.py` (downloads the pinned INT8 model, verifies sha256, converts to C)
 3. Tests — `scripts/run_tests.sh` (custom-instruction and bit-exactness tests)
 4. Benchmarks — `scripts/run_all.sh` (B0, B1, X1, X2 on microbenchmark, operators, full model)
