@@ -7,6 +7,10 @@
 #include "tensorflow/lite/micro/micro_mutable_op_resolver.h"
 #include "tensorflow/lite/micro/schema/schema_generated.h"
 
+#ifdef PROFILE_OPS
+#include "src/app/op_profiler.h"
+#endif
+
 #ifndef INPUT_INDEX
 #define INPUT_INDEX 0
 #endif
@@ -28,7 +32,12 @@ int main() {
         resolver.AddQuantize() != kTfLiteOk ||
         resolver.AddReshape() != kTfLiteOk ||
         resolver.AddSoftmax() != kTfLiteOk) return 2;
+#ifdef PROFILE_OPS
+    static OpProfiler profiler;
+    tflite::MicroInterpreter interpreter(model, resolver, arena, sizeof(arena), nullptr, &profiler);
+#else
     tflite::MicroInterpreter interpreter(model, resolver, arena, sizeof(arena));
+#endif
     if (interpreter.AllocateTensors() != kTfLiteOk) return 3;
     std::printf("arena_size=%u arena_used=%u\n", static_cast<unsigned>(sizeof(arena)),
                 static_cast<unsigned>(interpreter.arena_used_bytes()));
@@ -45,6 +54,9 @@ int main() {
     if (status != kTfLiteOk) return 5;
     // Nano printf does not support long long; RV64 unsigned long is 64 bits.
     std::printf("instret_invoke=%lu\n", static_cast<unsigned long>(end - start));
+#ifdef PROFILE_OPS
+    if (!profiler.Print()) return 6;
+#endif
     int top1 = 0;
     std::printf("output_hex=");
     for (int i = 0; i < 1000; ++i) {
@@ -52,5 +64,9 @@ int main() {
         if (output->data.uint8[i] > output->data.uint8[top1]) top1 = i;
     }
     std::printf("\ntop1=%d\n", top1);
+    std::printf("instret_end=");
+    std::fflush(stdout);
+    const uint64_t instret_end = read_instret();
+    std::printf("%lu\n", static_cast<unsigned long>(instret_end));
     return 0;
 }

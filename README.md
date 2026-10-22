@@ -61,7 +61,25 @@ Linux x86_64. Full-model runs on Spike take a few minutes each.
    `results/b0_fullmodel.csv`. Retired instructions are measured around `Invoke()` only; they are
    ISA-level counts, not cycle estimates. Input preprocessing is documented in `scripts/get_model.py`.
 
-5. **Benchmarks** — `scripts/run_all.sh` (B0, B1, X1, X2) will be added later.
+5. **B0 profiling** — build the separate per-operator profiler and generate measurements and plots:
+
+   ```bash
+   python3 -m pip install -r scripts/requirements.txt
+   make -j8 build/model/b0_0.elf build/model/b0_prof_0.elf
+   scripts/profile.py --config B0 --elf build/model/b0_0.elf --prof-elf build/model/b0_prof_0.elf
+   ```
+
+   Both executables must match the golden output before results are written. The script runs
+   the unprofiled ELF with Spike's PC histogram (about 20 minutes) and checks the histogram total
+   against the `minstret` value the program prints just before exit, accounting for Spike's CSR
+   serialization retries and the short output/exit tail after that read. CSVs, a generated table summary,
+   and PNG plots go to `results/`; raw logs stay in `build/profile/`.
+   The whole-program mix includes setup and printing. The kernel-functions view uses the explicit
+   symbol filter documented in `scripts/profile.py`; shared helpers remain outside that view.
+   `b0_function_scopes.csv` lists all executed functions and their assigned scope. GNU `size` text
+   includes read-only model data; linked `.text` ownership is reported separately.
+
+6. **Benchmarks** — `scripts/run_all.sh` (B0, B1, X1, X2) will be added later.
 
 ## Expected results
 

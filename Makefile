@@ -69,3 +69,11 @@ build/model/b0_%.elf: build/app/main_%.o $(MODEL_OBJECTS) build/libtflm.a src/ru
 
 .SECONDARY: $(MODEL_OBJECTS) $(addprefix build/app/main_,$(addsuffix .o,0 1 2))
 -include $(TFLM_OBJECTS:.o=.d) $(MODEL_OBJECTS:.o=.d) $(wildcard build/app/main_*.d)
+
+# Profiling changes only the application object; reference kernels are shared.
+build/app/main_prof_0.o: src/app/main.cc src/app/op_profiler.h Makefile
+	@mkdir -p $(@D)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -DINPUT_INDEX=0 -DPROFILE_OPS -MMD -MP -c $< -o $@
+
+build/model/b0_prof_0.elf: build/app/main_prof_0.o $(MODEL_OBJECTS) build/libtflm.a src/runtime/link.ld
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(filter %.o %.a,$^) -Wl,-Map,$(@:.elf=.map) -lm -o $@

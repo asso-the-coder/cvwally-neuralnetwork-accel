@@ -55,6 +55,16 @@ PYSCAN
         fail "$elf objdump"
     fi
 done
+if python3 scripts/count_macs.py --check; then
+    pass 'analytical model MAC count'
+else
+    fail 'analytical model MAC count'
+fi
+if python3 scripts/profile_mix.py; then
+    pass 'instruction classifier'
+else
+    fail 'instruction classifier'
+fi
 if python3 scripts/check_model.py --output build/model/test_results.csv; then
     pass 'full model (real image, bit-exact BUILTIN_REF)'
 else
