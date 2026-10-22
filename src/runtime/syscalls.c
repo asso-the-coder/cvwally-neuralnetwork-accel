@@ -60,3 +60,6 @@ int _kill(int pid, int signal) {
     (void)pid; (void)signal; errno = EINVAL; return -1;
 }
 int _getpid(void) { return 1; }
+
+/* Newlib calls this hook before the linker-collected C++ constructors. */
+void _init(void) {}

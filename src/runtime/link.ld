@@ -1,9 +1,9 @@
 OUTPUT_ARCH(riscv)
 ENTRY(_start)
 MEMORY { ram (rwx) : ORIGIN = 0x80000000, LENGTH = 128M }
-/* Reserve 64 MiB for newlib/the future arena and 64 KiB for the stack. */
+/* Reserve 64 MiB for newlib and 256 KiB for TFLM setup/evaluation stack headroom. */
 __heap_size = 64M;
-__stack_size = 64K;
+__stack_size = 256K;
 PHDRS
 {
     code PT_LOAD FLAGS(5);
@@ -19,6 +19,16 @@ SECTIONS
         . = ALIGN(8);
         __global_pointer$ = . + 0x800;
         *(.sdata .sdata.*)
+    } > ram :data
+    .preinit_array : {
+        PROVIDE_HIDDEN(__preinit_array_start = .);
+        KEEP(*(.preinit_array))
+        PROVIDE_HIDDEN(__preinit_array_end = .);
+    } > ram :data
+    .init_array : {
+        PROVIDE_HIDDEN(__init_array_start = .);
+        KEEP(*(SORT_BY_INIT_PRIORITY(.init_array.*))) KEEP(*(.init_array))
+        PROVIDE_HIDDEN(__init_array_end = .);
     } > ram :data
     .bss (NOLOAD) : {
         . = ALIGN(8);

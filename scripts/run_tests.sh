@@ -32,25 +32,32 @@ if [[ $status -gt 0 && $status -lt 124 ]] &&
 else
     fail "illegal_fp (exit $status)"
 fi
-if "${CROSS}objdump" -d -M max --no-show-raw-insn build/baremetal/hello.elf > build/baremetal/hello.dis; then
-    # Only instruction lines have a hex address followed by a colon; labels do not.
-    if python3 - <<'PY'
+for elf in build/baremetal/hello.elf build/model/b0_0.elf build/model/b0_1.elf build/model/b0_2.elf; do
+    if "${CROSS}objdump" -d -M max --no-show-raw-insn "$elf" > "${elf%.elf}.dis"; then
+        if python3 - "${elf%.elf}.dis" <<'PYSCAN'
 import re
+import sys
 from pathlib import Path
 instruction = re.compile(r'^\s*[0-9a-f]+:\s+(\S+)', re.MULTILINE)
 forbidden = re.compile(r'^(?:f(?!ence(?:\.|$))|lr\.|sc\.|amo|v|c\.(?:fl|fs))')
-mnemonics = instruction.findall(Path('build/baremetal/hello.dis').read_text())
+mnemonics = instruction.findall(Path(sys.argv[1]).read_text())
 bad = sorted({m for m in mnemonics if forbidden.match(m)})
 if not mnemonics or bad:
     print('Missing instructions or forbidden mnemonics:', ', '.join(bad))
     raise SystemExit(1)
-PY
-    then
-        pass 'hello instruction scan (no F/D/A/V/C-float)'
+PYSCAN
+        then
+            pass "$elf instruction scan (no F/D/A/V/C-float)"
+        else
+            fail "$elf instruction scan"
+        fi
     else
-        fail 'hello instruction scan'
+        fail "$elf objdump"
     fi
+done
+if python3 scripts/check_model.py --output build/model/test_results.csv; then
+    pass 'full model (real image, bit-exact BUILTIN_REF)'
 else
-    fail 'hello objdump'
+    fail 'full model (real image)'
 fi
 exit "$failed"
