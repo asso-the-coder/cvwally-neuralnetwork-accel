@@ -1,0 +1,4 @@
+config,config_desc,input,instret_invoke,top1,golden_top1,max_abs_diff,bit_exact,spike_wall_seconds,git_commit,git_dirty,gcc_pin,spike_pin,tflm_pin,model_sha256
+B1A,B0 + release build (-DNDEBUG),0,4873990558,652,652,0,True,24.218,1a9cea939c95795a4fde42707d1bb8643135254d,True,15.2.0-1,4ffd6ba860f4190ceac2716fa3c2cf139e85538f,cff91a2d47e37a6e773cb10d030ded4bb1e0ce5f,31c18ecf5cfb7bddf182e450e4029834271fc70e15b5fae6ddb5995ac2a6de51
+B1A,B0 + release build (-DNDEBUG),1,4874027045,21,21,0,True,24.359,1a9cea939c95795a4fde42707d1bb8643135254d,True,15.2.0-1,4ffd6ba860f4190ceac2716fa3c2cf139e85538f,cff91a2d47e37a6e773cb10d030ded4bb1e0ce5f,31c18ecf5cfb7bddf182e450e4029834271fc70e15b5fae6ddb5995ac2a6de51
+B1A,B0 + release build (-DNDEBUG),2,4874029180,21,21,0,True,24.436,1a9cea939c95795a4fde42707d1bb8643135254d,True,15.2.0-1,4ffd6ba860f4190ceac2716fa3c2cf139e85538f,cff91a2d47e37a6e773cb10d030ded4bb1e0ce5f,31c18ecf5cfb7bddf182e450e4029834271fc70e15b5fae6ddb5995ac2a6de51
