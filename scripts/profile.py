@@ -31,6 +31,7 @@ import time
 import numpy as np
 from count_macs import count_macs
 from get_model import ROOT, pins
+from configs import config_id
 from profile_mix import CATEGORIES, disassembly, histogram
 
 
@@ -108,14 +109,14 @@ def linked_sizes(elf):
     live = text.split('Linker script and memory map', 1)[1]
     # GNU ld wraps long input section names onto the previous line.
     live = re.sub(r'( \.text\S*)\n\s+', r'\1 ', live)
-    kernel_objects = {p.name for p in (ROOT / 'build/tflm').rglob('*.o') if 'kernels' in p.parts}
+    kernel_objects = {p.name for p in (elf.parent / 'tflm').rglob('*.o') if 'kernels' in p.parts}
     groups = Counter()
     for m in re.finditer(r'^ (\.text\S*)\s+0x([0-9a-f]+)\s+0x([0-9a-f]+)\s+(\S+)', live, re.M):
         _, _, size, owner = m.groups()
         member = re.search(r'libtflm\.a\(([^)]+)\)', owner)
         if member and member[1] in kernel_objects:
             group = 'kernels'
-        elif 'build/runtime/' in owner or ('libtflm.a' not in owner and '.a(' in owner):
+        elif '/runtime/' in owner or ('libtflm.a' not in owner and '.a(' in owner):
             group = 'runtime'
         else:
             group = 'rest'
@@ -142,14 +143,13 @@ def table(rows, columns):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--config', required=True)
-    parser.add_argument('--elf', type=Path, required=True)
-    parser.add_argument('--prof-elf', type=Path, required=True)
+    parser.add_argument('--config', type=config_id, default='b0')
+    parser.add_argument('--elf', type=Path)
+    parser.add_argument('--prof-elf', type=Path)
     parser.add_argument('--model', type=Path, default=ROOT / 'build/model/efficientnet-lite0-int8.tflite')
     args = parser.parse_args()
-    if not re.fullmatch(r'[A-Za-z0-9_-]+', args.config):
-        parser.error('config must be a simple filename component')
-    elf, prof = args.elf.resolve(), args.prof_elf.resolve()
+    elf = (args.elf or ROOT / f'build/{args.config}/model_0.elf').resolve()
+    prof = (args.prof_elf or ROOT / f'build/{args.config}/model_prof_0.elf').resolve()
     cross = os.environ.get('CROSS', 'riscv-none-elf-')
     work = ROOT / 'build/profile' / args.config.lower()
     work.mkdir(parents=True, exist_ok=True)
@@ -294,7 +294,7 @@ def main():
                       compressed_fraction=compressed[scope]/n)
         summary += [dict(scope=scope, metric=k, value=v) for k, v in values.items()]
     p = pins()
-    metadata = dict(config=args.config, git_commit=command(['git', 'rev-parse', 'HEAD']).strip(),
+    metadata = dict(config=args.config.upper(), git_commit=command(['git', 'rev-parse', 'HEAD']).strip(),
                     git_dirty=bool(command(['git', 'status', '--porcelain'])), gcc_pin=p['XPACK_VERSION'],
                     spike_pin=p['SPIKE_COMMIT'], tflm_pin=p['TFLM_COMMIT'], model_sha256=hashlib.sha256(args.model.read_bytes()).hexdigest(),
                     elf_sha256=hashlib.sha256(elf.read_bytes()).hexdigest(),

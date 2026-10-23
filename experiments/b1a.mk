@@ -1,0 +1,2 @@
+CONFIG_DESC = B0 + release build (-DNDEBUG)
+CONFIG_CXXFLAGS = -DNDEBUG

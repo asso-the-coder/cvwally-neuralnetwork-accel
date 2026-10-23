@@ -5,20 +5,25 @@ cd "$ROOT"
 failed=0
 pass() { printf 'PASS: %s\n' "$1"; }
 fail() { printf 'FAIL: %s\n' "$1"; failed=1; }
-if ! make; then
-    echo 'FAIL: build'
-    exit 1
-fi
+config_list=$(python3 -c 'import sys; sys.path.insert(0, "scripts"); from configs import config_order; print("\n".join(config_order()))')
+mapfile -t configs <<< "$config_list"
+[[ ${#configs[@]} -gt 0 ]] || exit 1
+for config in "${configs[@]}"; do
+    if ! make CONFIG="$config"; then
+        echo "FAIL: build $config"
+        exit 1
+    fi
+done
 SPIKE=${SPIKE:-spike}
 CROSS=${CROSS:-riscv-none-elf-}
 run() {
     status=0
-    timeout -k 2s 30s "$SPIKE" --isa=rv64imc "build/baremetal/$1.elf" > "build/baremetal/$1.log" 2>&1 || status=$?
-    cat "build/baremetal/$1.log"
+    timeout -k 2s 30s "$SPIKE" --isa=rv64imc "build/b0/baremetal/$1.elf" > "build/b0/baremetal/$1.log" 2>&1 || status=$?
+    cat "build/b0/baremetal/$1.log"
 }
 run hello
-if [[ $status == 0 ]] && grep -Fxq 'hello from rv64imc' build/baremetal/hello.log &&
-    grep -Fxq 'int = 42' build/baremetal/hello.log; then
+if [[ $status == 0 ]] && grep -Fxq 'hello from rv64imc' build/b0/baremetal/hello.log &&
+    grep -Fxq 'int = 42' build/b0/baremetal/hello.log; then
     pass 'hello (exit 0, printf string and integer)'
 else
     fail "hello (exit $status)"
@@ -27,12 +32,16 @@ run exitcode
 if [[ $status == 3 ]]; then pass 'exitcode (exit 3)'; else fail "exitcode (exit $status)"; fi
 run illegal_fp
 if [[ $status -gt 0 && $status -lt 124 ]] &&
-    grep -Eq '^trap: mcause=0x0*2 mepc=0x[0-9a-f]+ mtval=0x[0-9a-f]+$' build/baremetal/illegal_fp.log; then
+    grep -Eq '^trap: mcause=0x0*2 mepc=0x[0-9a-f]+ mtval=0x[0-9a-f]+$' build/b0/baremetal/illegal_fp.log; then
     pass 'illegal_fp (illegal-instruction trap, nonzero exit)'
 else
     fail "illegal_fp (exit $status)"
 fi
-for elf in build/baremetal/hello.elf build/model/b0_0.elf build/model/b0_1.elf build/model/b0_2.elf; do
+elfs=(build/b0/baremetal/hello.elf)
+for config in "${configs[@]}"; do
+    elfs+=(build/"$config"/model_{0,1,2}.elf build/"$config"/model_prof_0.elf)
+done
+for elf in "${elfs[@]}"; do
     if "${CROSS}objdump" -d -M max --no-show-raw-insn "$elf" > "${elf%.elf}.dis"; then
         if python3 - "${elf%.elf}.dis" <<'PYSCAN'
 import re
@@ -65,9 +74,11 @@ if python3 scripts/profile_mix.py; then
 else
     fail 'instruction classifier'
 fi
-if python3 scripts/check_model.py --output build/model/test_results.csv; then
-    pass 'full model (real image, bit-exact BUILTIN_REF)'
-else
-    fail 'full model (real image)'
-fi
+for config in "${configs[@]}"; do
+    if python3 scripts/check_model.py --config "$config" --output "build/$config/test_results.csv"; then
+        pass "$config full model (real image, bit-exact BUILTIN_REF)"
+    else
+        fail "$config full model (real image)"
+    fi
+done
 exit "$failed"
