@@ -31,7 +31,7 @@ import time
 import numpy as np
 from count_macs import count_macs
 from get_model import ROOT, pins
-from configs import config_id
+from configs import config_id, git_state
 from profile_mix import CATEGORIES, disassembly, histogram
 
 
@@ -148,13 +148,16 @@ def main():
     parser.add_argument('--elf', type=Path)
     parser.add_argument('--prof-elf', type=Path)
     parser.add_argument('--model', type=Path, default=ROOT / 'build/model/efficientnet-lite0-int8.tflite')
+    parser.add_argument('--skip-golden', action='store_true',
+                        help='use golden outputs generated before this run')
     args = parser.parse_args()
     elf = (args.elf or ROOT / f'build/{args.config}/model_0.elf').resolve()
     prof = (args.prof_elf or ROOT / f'build/{args.config}/model_prof_0.elf').resolve()
     cross = os.environ.get('CROSS', 'riscv-none-elf-')
     work = ROOT / 'build/profile' / args.config.lower()
     work.mkdir(parents=True, exist_ok=True)
-    command([sys.executable, ROOT / 'scripts/golden.py'])
+    if not args.skip_golden:
+        command([sys.executable, ROOT / 'scripts/golden.py'])
     syms = symbols(elf, cross)
     prof_text, prof_wall, prof_result = run_spike(prof, work / 'profiled.log')
     # Read the actual Spike boot ROM; these PCs do not belong to the ELF.
@@ -295,8 +298,9 @@ def main():
                       compressed_fraction=compressed[scope]/n)
         summary += [dict(scope=scope, metric=k, value=v) for k, v in values.items()]
     p = pins()
-    metadata = dict(config=args.config.upper(), git_commit=command(['git', 'rev-parse', 'HEAD']).strip(),
-                    git_dirty=bool(command(['git', 'status', '--porcelain'])), gcc_pin=p['XPACK_VERSION'],
+    commit, dirty = git_state()
+    metadata = dict(config=args.config.upper(), git_commit=commit,
+                    git_dirty=dirty, gcc_pin=p['XPACK_VERSION'],
                     spike_pin=p['SPIKE_COMMIT'], tflm_pin=p['TFLM_COMMIT'], model_sha256=hashlib.sha256(args.model.read_bytes()).hexdigest(),
                     elf_sha256=hashlib.sha256(elf.read_bytes()).hexdigest(),
                     prof_elf_sha256=hashlib.sha256(prof.read_bytes()).hexdigest())

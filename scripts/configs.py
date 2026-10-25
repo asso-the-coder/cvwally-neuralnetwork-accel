@@ -5,6 +5,19 @@ import subprocess
 from get_model import ROOT
 
 
+def git_state():
+    """Return source revision and whether anything outside generated results changed."""
+    try:
+        commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True,
+                                         stderr=subprocess.DEVNULL).strip()
+        dirty = bool(subprocess.check_output(
+            ['git', 'status', '--porcelain', '--untracked-files=all', '--', '.',
+             ':(exclude)results'], cwd=ROOT, text=True, stderr=subprocess.DEVNULL))
+    except (OSError, subprocess.CalledProcessError):
+        return 'unknown', 'unknown'
+    return commit, dirty
+
+
 def config_id(value):
     if not re.fullmatch(r'[a-z0-9]+', value):
         raise ValueError('config must match [a-z0-9]+')

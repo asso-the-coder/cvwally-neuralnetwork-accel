@@ -11,25 +11,22 @@ import time
 
 import numpy as np
 from get_model import ROOT, pins
-from configs import config_id, config_desc
+from configs import config_id, config_desc, git_state
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', type=config_id, default='b0')
     parser.add_argument('--all', action='store_true', help='check photo and both seeded random inputs')
+    parser.add_argument('--skip-golden', action='store_true',
+                        help='use golden outputs generated before this run')
     parser.add_argument("--output", type=Path, default=None,
                         help="CSV destination (replaced for this run)")
     args = parser.parse_args()
-    subprocess.run([sys.executable, str(ROOT / 'scripts/golden.py')], check=True)
+    if not args.skip_golden:
+        subprocess.run([sys.executable, str(ROOT / 'scripts/golden.py')], check=True)
     p = pins()
-    # Source archives (e.g. a GitHub ZIP) have no .git; record that instead of failing.
-    try:
-        commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True,
-                                         stderr=subprocess.DEVNULL).strip()
-        dirty = bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT, text=True))
-    except (OSError, subprocess.CalledProcessError):
-        commit, dirty = 'unknown', 'unknown'
+    commit, dirty = git_state()
     results = args.output or ROOT / f"results/{args.config}_fullmodel.csv"
     description = config_desc(args.config)
     results.parent.mkdir(parents=True, exist_ok=True)
