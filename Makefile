@@ -46,7 +46,8 @@ TFLM_KERNELS = $(addprefix $(TFLM)/tensorflow/lite/micro/kernels/,$(addsuffix .c
 TFLM_INTERNAL = $(wildcard $(TFLM)/tensorflow/lite/micro/kernels/internal/*.cc) $(wildcard $(TFLM)/tensorflow/lite/kernels/*.cc)
 TFLM_SOURCES = $(sort $(TFLM_CORE) $(TFLM_KERNELS) $(TFLM_INTERNAL))
 TFLM_OBJECTS = $(patsubst $(TFLM)/%.cc,$(BUILD)/tflm/%.o,$(TFLM_SOURCES))
-MODEL_OBJECTS = $(BUILD)/model/model_data.o $(BUILD)/model/inputs.o $(BUILD)/app/debug_log.o $(BUILD)/runtime/cxx_support.o $(BUILD)/runtime/crt0.o $(BUILD)/runtime/htif.o $(BUILD)/runtime/syscalls.o
+KERNEL_OBJECTS = $(patsubst src/%.cc,$(BUILD)/%.o,$(wildcard src/kernels/*.cc))
+MODEL_OBJECTS = $(KERNEL_OBJECTS) $(BUILD)/model/model_data.o $(BUILD)/model/inputs.o $(BUILD)/app/debug_log.o $(BUILD)/runtime/cxx_support.o $(BUILD)/runtime/crt0.o $(BUILD)/runtime/htif.o $(BUILD)/runtime/syscalls.o
 MODEL_ELFS = $(addprefix $(BUILD)/model_,$(addsuffix .elf,0 1 2))
 all: $(MODEL_ELFS) $(BUILD)/model_prof_0.elf
 
@@ -92,3 +93,9 @@ $(BUILD)/app/main_prof_0.o: src/app/main.cc src/app/op_profiler.h Makefile exper
 
 $(BUILD)/model_prof_0.elf: $(BUILD)/app/main_prof_0.o $(MODEL_OBJECTS) $(BUILD)/libtflm.a src/runtime/link.ld
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(filter %.o %.a,$^) -Wl,-Map,$(@:.elf=.map) -lm -o $@
+
+.PHONY: kernel-tests
+kernel-tests: $(BUILD)/kernel_tests.elf
+$(BUILD)/kernel_tests.elf: $(BUILD)/tests/kernels.o $(KERNEL_OBJECTS) $(BUILD)/app/debug_log.o $(BUILD)/runtime/cxx_support.o $(BUILD)/runtime/crt0.o $(BUILD)/runtime/htif.o $(BUILD)/runtime/syscalls.o $(BUILD)/libtflm.a src/runtime/link.ld
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(filter %.o %.a,$^) -Wl,-Map,$(@:.elf=.map) -lm -o $@
+-include $(BUILD)/tests/kernels.d

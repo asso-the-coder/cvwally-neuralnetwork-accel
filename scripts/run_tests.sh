@@ -37,7 +37,15 @@ if [[ $status -gt 0 && $status -lt 124 ]] &&
 else
     fail "illegal_fp (exit $status)"
 fi
-elfs=(build/b0/baremetal/hello.elf)
+if make CONFIG=b1c kernel-tests &&
+    timeout -k 2s 600s "$SPIKE" --isa=rv64imc build/b1c/kernel_tests.elf > build/b1c/kernel_tests.log 2>&1; then
+    cat build/b1c/kernel_tests.log
+    pass 'optimized kernels against TFLM reference'
+else
+    cat build/b1c/kernel_tests.log 2>/dev/null || true
+    fail 'optimized kernels against TFLM reference'
+fi
+elfs=(build/b0/baremetal/hello.elf build/b1c/kernel_tests.elf)
 for config in "${configs[@]}"; do
     elfs+=(build/"$config"/model_{0,1,2}.elf build/"$config"/model_prof_0.elf)
 done

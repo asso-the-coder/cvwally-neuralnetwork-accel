@@ -3,7 +3,7 @@
 
 The whole-program histogram includes boot, setup, Invoke, output and exit.
 The kernel-functions view is a conservative symbol filter: reference_integer_ops
-operator Eval functions, and the integer requantization helper. It is NOT a
+operator Eval functions, cvw compute kernels, and the integer requantization helper. It is NOT a
 temporal Invoke histogram: other shared
 helpers and interpreter dispatch remain in the complementary view. Every
 executed function and its scope is listed in *_function_scopes.csv.
@@ -100,6 +100,7 @@ def symbols(elf, cross):
 
 def kernel_function(name):
     return ('reference_integer_ops::' in name or
+            name.startswith(('cvw::Depthwise(', 'cvw::Conv1x1(', 'cvw::FullyConnected(')) or
             name.startswith('tflite::micro::MultiplyByQuantizedMultiplier(') or
             bool(re.search(r'::(?:Eval\w*|\w+Eval)\(', name)))
 
@@ -114,7 +115,7 @@ def linked_sizes(elf):
     for m in re.finditer(r'^ (\.text\S*)\s+0x([0-9a-f]+)\s+0x([0-9a-f]+)\s+(\S+)', live, re.M):
         _, _, size, owner = m.groups()
         member = re.search(r'libtflm\.a\(([^)]+)\)', owner)
-        if member and member[1] in kernel_objects:
+        if (member and member[1] in kernel_objects) or '/kernels/' in owner:
             group = 'kernels'
         elif '/runtime/' in owner or ('libtflm.a' not in owner and '.a(' in owner):
             group = 'runtime'

@@ -7,6 +7,10 @@
 #include "tensorflow/lite/micro/micro_mutable_op_resolver.h"
 #include "tensorflow/lite/micro/schema/schema_generated.h"
 
+#if defined(CVW_DW_B1) || defined(CVW_OFFSET_FOLD)
+#include "src/kernels/kernels.h"
+#endif
+
 #ifdef PROFILE_OPS
 #include "src/app/op_profiler.h"
 #endif
@@ -26,9 +30,21 @@ int main() {
     tflite::MicroMutableOpResolver<8> resolver;
     if (resolver.AddAdd() != kTfLiteOk ||
         resolver.AddAveragePool2D() != kTfLiteOk ||
+#ifdef CVW_OFFSET_FOLD
+        resolver.AddConv2D(cvw::RegisterConv1x1()) != kTfLiteOk ||
+#else
         resolver.AddConv2D() != kTfLiteOk ||
+#endif
+#ifdef CVW_DW_B1
+        resolver.AddDepthwiseConv2D(cvw::RegisterDepthwise()) != kTfLiteOk ||
+#else
         resolver.AddDepthwiseConv2D() != kTfLiteOk ||
+#endif
+#ifdef CVW_OFFSET_FOLD
+        resolver.AddFullyConnected(cvw::RegisterFC()) != kTfLiteOk ||
+#else
         resolver.AddFullyConnected() != kTfLiteOk ||
+#endif
         resolver.AddQuantize() != kTfLiteOk ||
         resolver.AddReshape() != kTfLiteOk ||
         resolver.AddSoftmax() != kTfLiteOk) return 2;
@@ -38,7 +54,14 @@ int main() {
 #else
     tflite::MicroInterpreter interpreter(model, resolver, arena, sizeof(arena));
 #endif
+#ifdef CVW_DW_B1
+    const uint64_t setup_start = read_instret();
+#endif
     if (interpreter.AllocateTensors() != kTfLiteOk) return 3;
+#ifdef CVW_DW_B1
+    const uint64_t setup_end = read_instret();
+    std::printf("instret_setup=%lu\n", static_cast<unsigned long>(setup_end - setup_start));
+#endif
     std::printf("arena_size=%u arena_used=%u\n", static_cast<unsigned>(sizeof(arena)),
                 static_cast<unsigned>(interpreter.arena_used_bytes()));
     const unsigned char* const inputs[] = {input_0, input_1, input_2};
