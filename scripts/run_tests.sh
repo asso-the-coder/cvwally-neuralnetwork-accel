@@ -16,9 +16,13 @@ for config in "${configs[@]}"; do
 done
 SPIKE=${SPIKE:-spike}
 CROSS=${CROSS:-riscv-none-elf-}
+args_text=$(python3 scripts/configs.py --spike-args b0)
+mapfile -t plain_args <<< "$args_text"
+args_text=$(python3 scripts/configs.py --spike-args x1)
+mapfile -t x1_args <<< "$args_text"
 run() {
     status=0
-    timeout -k 2s 30s "$SPIKE" --isa=rv64imc "build/b0/baremetal/$1.elf" > "build/b0/baremetal/$1.log" 2>&1 || status=$?
+    timeout -k 2s 30s "$SPIKE" "${plain_args[@]}" "build/b0/baremetal/$1.elf" > "build/b0/baremetal/$1.log" 2>&1 || status=$?
     cat "build/b0/baremetal/$1.log"
 }
 run hello
@@ -37,15 +41,35 @@ if [[ $status -gt 0 && $status -lt 124 ]] &&
 else
     fail "illegal_fp (exit $status)"
 fi
-if make CONFIG=b1c kernel-tests &&
-    timeout -k 2s 600s "$SPIKE" --isa=rv64imc build/b1c/kernel_tests.elf > build/b1c/kernel_tests.log 2>&1; then
-    cat build/b1c/kernel_tests.log
-    pass 'optimized kernels against TFLM reference'
+for config in b1c x1; do
+    args_text=$(python3 scripts/configs.py --spike-args "$config")
+    mapfile -t kernel_args <<< "$args_text"
+    if make CONFIG="$config" kernel-tests &&
+        timeout -k 2s 600s "$SPIKE" "${kernel_args[@]}" "build/$config/kernel_tests.elf" > "build/$config/kernel_tests.log" 2>&1; then
+        cat "build/$config/kernel_tests.log"
+        pass "$config optimized kernels against TFLM reference"
+    else
+        cat "build/$config/kernel_tests.log" 2>/dev/null || true
+        fail "$config optimized kernels against TFLM reference"
+    fi
+done
+if python3 scripts/xqmac_golden.py && make CONFIG=x1 xqmac-tests &&
+    timeout -k 2s 60s "$SPIKE" "${x1_args[@]}" build/x1/xqmac_tests.elf > build/x1/xqmac_tests.log 2>&1; then
+    cat build/x1/xqmac_tests.log
+    pass 'qmac8 instruction and C fallback'
 else
-    cat build/b1c/kernel_tests.log 2>/dev/null || true
-    fail 'optimized kernels against TFLM reference'
+    cat build/x1/xqmac_tests.log 2>/dev/null || true
+    fail 'qmac8 instruction and C fallback'
 fi
-elfs=(build/b0/baremetal/hello.elf build/b1c/kernel_tests.elf)
+status=0
+timeout -k 2s 30s "$SPIKE" "${plain_args[@]}" build/x1/xqmac_tests.elf > build/x1/xqmac_negative.log 2>&1 || status=$?
+if [[ $status -gt 0 && $status -lt 124 ]] &&
+    grep -Eq '^trap: mcause=0x0*2 mepc=0x[0-9a-f]+ mtval=0x[0-9a-f]+$' build/x1/xqmac_negative.log; then
+    pass 'qmac8 illegal on plain RV64IMC'
+else
+    fail "qmac8 negative test (exit $status)"
+fi
+elfs=(build/b0/baremetal/hello.elf build/b1c/kernel_tests.elf build/x1/kernel_tests.elf build/x1/xqmac_tests.elf)
 for config in "${configs[@]}"; do
     elfs+=(build/"$config"/model_{0,1,2}.elf build/"$config"/model_prof_0.elf)
 done
@@ -83,7 +107,9 @@ else
     fail 'instruction classifier'
 fi
 for config in "${configs[@]}"; do
-    if python3 scripts/check_model.py --config "$config" --output "build/$config/test_results.csv"; then
+    model_args=()
+    if [[ $config == x1 ]]; then model_args+=(--all); fi
+    if python3 scripts/check_model.py --config "$config" "${model_args[@]}" --output "build/$config/test_results.csv"; then
         pass "$config full model (real image, bit-exact BUILTIN_REF)"
     else
         fail "$config full model (real image)"

@@ -48,5 +48,6 @@ fi
 if (( failed )); then
     exit 1
 fi
+python3 scripts/microbench.py
 python3 scripts/compare_configs.py
 cat results/configs.md

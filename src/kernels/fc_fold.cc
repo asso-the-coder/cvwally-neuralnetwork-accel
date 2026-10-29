@@ -4,6 +4,9 @@
 #include "tensorflow/lite/micro/kernels/fully_connected.h"
 #include "tensorflow/lite/micro/kernels/internal/common.h"
 #include "tensorflow/lite/micro/kernels/kernel_util.h"
+#ifdef CVW_XQMAC
+#include "src/kernels/xqmac.h"
+#endif
 namespace cvw {
 using namespace tflite;
 void FullyConnected(const FullyConnectedParams& p, const RuntimeShape&,
@@ -12,12 +15,29 @@ void FullyConnected(const FullyConnectedParams& p, const RuntimeShape&,
   const int depth = f.Dims(f.DimensionsCount() - 1);
   const int channels = out.Dims(out.DimensionsCount() - 1);
   const int batches = out.FlatSize() / channels;
+#ifdef CVW_XQMAC
+  const bool packed = ((reinterpret_cast<uintptr_t>(input) |
+                        reinterpret_cast<uintptr_t>(weights) | static_cast<uintptr_t>(depth)) & 7) == 0;
+  if (packed) ++qmac8_layers; else ++scalar_layers;
+#endif
   for (int b = 0; b < batches; ++b) {
     const int8_t* wt = weights;
     for (int k = 0; k < channels; ++k) {
       const int8_t* x = input;
       int32_t acc = 0;
+#ifdef CVW_XQMAC
+      int c = 0;
+      if (packed) {
+        for (; c + 8 <= depth; c += 8) {
+          acc += cvw_qmac8(cvw_load8(wt), cvw_load8(x));
+          wt += 8;
+          x += 8;
+        }
+      }
+      for (; c < depth; ++c) acc += static_cast<int32_t>(*wt++) * *x++;
+#else
       for (int c = 0; c < depth; ++c) acc += static_cast<int32_t>(*wt++) * *x++;
+#endif
       acc += bias[k];
       acc = tflite::MultiplyByQuantizedMultiplier(acc, p.output_multiplier, p.output_shift);
       acc += p.output_offset;

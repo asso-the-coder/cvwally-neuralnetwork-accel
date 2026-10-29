@@ -70,6 +70,18 @@ if ! match_stamp "$TOOLS_DIR/.spike-stamp" "$SPIKE_COMMIT"; then
     )
     printf '%s\n' "$SPIKE_COMMIT" > "$TOOLS_DIR/.spike-stamp"
 fi
+extension_source="$SCRIPT_DIR/../src/spike_ext/xqmac.cc"
+extension_hash=$(sha256sum "$extension_source")
+extension_hash=${extension_hash%% *}
+extension_pin="$SPIKE_COMMIT $extension_hash"
+if ! match_stamp "$TOOLS_DIR/.xqmac-stamp" "$extension_pin" ||
+    [[ ! -f "$TOOLS_DIR/spike/lib/libxqmac.so" ]]; then
+    mkdir -p "$TOOLS_DIR/spike/lib"
+    g++ -std=c++17 -O2 -Wall -Wextra -fPIC -shared \
+        -isystem "$TOOLS_DIR/spike/include" -isystem "$TOOLS_DIR/spike/include/riscv" \
+        "$extension_source" -o "$TOOLS_DIR/spike/lib/libxqmac.so"
+    printf '%s\n' "$extension_pin" > "$TOOLS_DIR/.xqmac-stamp"
+fi
 python_pin=$(sha256sum "$SCRIPT_DIR/requirements.txt")
 python_pin=${python_pin%% *}
 if ! match_stamp "$TOOLS_DIR/.python-stamp" "$python_pin"; then

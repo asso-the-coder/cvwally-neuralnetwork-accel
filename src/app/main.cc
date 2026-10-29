@@ -11,6 +11,10 @@
 #include "src/kernels/kernels.h"
 #endif
 
+#ifdef CVW_XQMAC
+#include "src/kernels/xqmac.h"
+#endif
+
 #ifdef PROFILE_OPS
 #include "src/app/op_profiler.h"
 #endif
@@ -75,6 +79,9 @@ int main() {
     const TfLiteStatus status = interpreter.Invoke();
     const uint64_t end = read_instret();
     if (status != kTfLiteOk) return 5;
+#ifdef CVW_XQMAC
+    std::printf("qmac8_layers=%u scalar_layers=%u\n", cvw::qmac8_layers, cvw::scalar_layers);
+#endif
     // Nano printf does not support long long; RV64 unsigned long is 64 bits.
     std::printf("instret_invoke=%lu\n", static_cast<unsigned long>(end - start));
 #ifdef PROFILE_OPS

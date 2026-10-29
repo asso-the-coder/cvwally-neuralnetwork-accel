@@ -11,7 +11,7 @@ import time
 
 import numpy as np
 from get_model import ROOT, pins
-from configs import config_id, config_desc, git_state
+from configs import config_id, config_desc, git_state, spike_args, execution_metadata
 
 
 def main():
@@ -29,10 +29,11 @@ def main():
     commit, dirty = git_state()
     results = args.output or ROOT / f"results/{args.config}_fullmodel.csv"
     description = config_desc(args.config)
+    metadata = execution_metadata(args.config)
     results.parent.mkdir(parents=True, exist_ok=True)
     fields = ['config', 'config_desc', 'input', 'instret_invoke', 'top1', 'golden_top1', 'max_abs_diff',
               'bit_exact', 'spike_wall_seconds', 'git_commit', 'git_dirty', 'gcc_pin',
-              'spike_pin', 'tflm_pin', 'model_sha256']
+              'spike_pin', 'tflm_pin', 'model_sha256'] + list(metadata)
     # Replace rather than mix measurements from different builds or invocations.
     with results.open('w', newline='') as csv_file:
         writer = csv.DictWriter(csv_file, fieldnames=fields)
@@ -40,9 +41,9 @@ def main():
         csv_file.flush()
         for k in (range(3) if args.all else [0]):
             elf = ROOT / f'build/{args.config}/model_{k}.elf'
-            print(f'Running input={k} on spike --isa=rv64imc ...', flush=True)
+            print(f'Running input={k} with config={args.config} ...', flush=True)
             start = time.monotonic()
-            run = subprocess.run([os.environ.get('SPIKE', 'spike'), '--isa=rv64imc', str(elf)],
+            run = subprocess.run([os.environ.get('SPIKE', 'spike'), *spike_args(args.config), str(elf)],
                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
             wall = time.monotonic() - start
             (ROOT / f'build/{args.config}/spike_{k}.log').write_text(run.stdout)
@@ -72,7 +73,7 @@ def main():
                                  bit_exact=exact, spike_wall_seconds=f'{wall:.3f}',
                                  git_commit=commit, git_dirty=dirty, gcc_pin=p['XPACK_VERSION'],
                                  spike_pin=p['SPIKE_COMMIT'], tflm_pin=p['TFLM_COMMIT'],
-                                 model_sha256=p['MODEL_SHA256']))
+                                 model_sha256=p['MODEL_SHA256'], **metadata))
             csv_file.flush()
             if not exact:
                 indices = np.flatnonzero(output != expected)

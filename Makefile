@@ -2,7 +2,9 @@ CONFIG ?= b0
 ifeq ($(shell printf '%s\n' '$(CONFIG)' | LC_ALL=C grep -Ex '[a-z0-9]+'),)
 $(error CONFIG must match [a-z0-9]+)
 endif
+TOOLS_DIR ?= $(HOME)/opt/cvwally
 include experiments/$(CONFIG).mk
+CONFIG_SPIKE_ARGS ?= --isa=rv64imc
 BUILD = build/$(CONFIG)
 
 MAKEFLAGS += --no-builtin-rules
@@ -23,7 +25,7 @@ $(BUILD)/baremetal/%.elf: src/tests/baremetal/%.c $(RUNTIME) src/runtime/htif.h 
 	$(CC) $(CFLAGS) $(LDFLAGS) $(RUNTIME) $< -o $@
 
 run-hello: $(BUILD)/baremetal/hello.elf
-	$(SPIKE) --isa=rv64imc $<
+	$(SPIKE) $(CONFIG_SPIKE_ARGS) $<
 
 clean:
 	rm -rf $(addprefix build/,$(basename $(notdir $(wildcard experiments/*.mk)))) $(patsubst %/libtflm.a,%,$(wildcard build/*/libtflm.a))
@@ -99,3 +101,19 @@ kernel-tests: $(BUILD)/kernel_tests.elf
 $(BUILD)/kernel_tests.elf: $(BUILD)/tests/kernels.o $(KERNEL_OBJECTS) $(BUILD)/app/debug_log.o $(BUILD)/runtime/cxx_support.o $(BUILD)/runtime/crt0.o $(BUILD)/runtime/htif.o $(BUILD)/runtime/syscalls.o $(BUILD)/libtflm.a src/runtime/link.ld
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(filter %.o %.a,$^) -Wl,-Map,$(@:.elf=.map) -lm -o $@
 -include $(BUILD)/tests/kernels.d
+
+.PHONY: config-spike-args xqmac-tests microbench
+config-spike-args:
+	@printf '%s\n' '$(CONFIG_SPIKE_ARGS)'
+
+build/xqmac/vectors.h: scripts/xqmac_golden.py
+	python3 $< --output $@
+
+$(BUILD)/tests/xqmac.o: build/xqmac/vectors.h
+xqmac-tests: $(BUILD)/xqmac_tests.elf
+microbench: $(BUILD)/microbench.elf
+$(BUILD)/xqmac_tests.elf: $(BUILD)/tests/xqmac.o $(BUILD)/runtime/crt0.o $(BUILD)/runtime/htif.o $(BUILD)/runtime/syscalls.o src/runtime/link.ld
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(filter %.o,$^) -o $@
+$(BUILD)/microbench.elf: $(BUILD)/tests/microbench.o $(BUILD)/runtime/crt0.o $(BUILD)/runtime/htif.o $(BUILD)/runtime/syscalls.o src/runtime/link.ld
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(filter %.o,$^) -o $@
+-include $(BUILD)/tests/xqmac.d $(BUILD)/tests/microbench.d

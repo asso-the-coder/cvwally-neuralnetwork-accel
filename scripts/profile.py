@@ -31,7 +31,7 @@ import time
 import numpy as np
 from count_macs import count_macs
 from get_model import ROOT, pins
-from configs import config_id, git_state
+from configs import config_id, git_state, spike_args, execution_metadata
 from profile_mix import CATEGORIES, disassembly, histogram
 
 
@@ -58,8 +58,8 @@ def check_output(text):
     return k, int(field(text, r'^instret_invoke=(\d+)$'))
 
 
-def run_spike(elf, log, hist=False):
-    args = [os.environ.get('SPIKE', 'spike'), '--isa=rv64imc']
+def run_spike(elf, log, config, hist=False):
+    args = [os.environ.get('SPIKE', 'spike'), *spike_args(config)]
     if hist:
         args += ['-g']
     print(f'Running {elf.name}, histogram={hist} ...', flush=True)
@@ -159,14 +159,14 @@ def main():
     if not args.skip_golden:
         command([sys.executable, ROOT / 'scripts/golden.py'])
     syms = symbols(elf, cross)
-    prof_text, prof_wall, prof_result = run_spike(prof, work / 'profiled.log')
+    prof_text, prof_wall, prof_result = run_spike(prof, work / 'profiled.log', args.config)
     # Read the actual Spike boot ROM; these PCs do not belong to the ELF.
     debug = work / 'histogram.cmd'
     debug.write_text(''.join(f'mem {pc:x}\n' for pc in range(0x1000, 0x1020, 8)) + 'quit\n')
     boot_text = subprocess.check_output(
-        [os.environ.get('SPIKE', 'spike'), '--isa=rv64imc', '-d',
+        [os.environ.get('SPIKE', 'spike'), *spike_args(args.config), '-d',
          f'--debug-cmd={debug}', str(elf)], stderr=subprocess.STDOUT, text=True)
-    text, wall, result = run_spike(elf, work / 'histogram.log', hist=True)
+    text, wall, result = run_spike(elf, work / 'histogram.log', args.config, hist=True)
     if result[0] != prof_result[0]:
         raise ValueError('ELFs use different inputs')
     hist = histogram((work / 'histogram.stderr').read_text())
@@ -304,6 +304,7 @@ def main():
                     spike_pin=p['SPIKE_COMMIT'], tflm_pin=p['TFLM_COMMIT'], model_sha256=hashlib.sha256(args.model.read_bytes()).hexdigest(),
                     elf_sha256=hashlib.sha256(elf.read_bytes()).hexdigest(),
                     prof_elf_sha256=hashlib.sha256(prof.read_bytes()).hexdigest())
+    metadata.update(execution_metadata(args.config))
     # All correctness and consistency checks complete before publishing any result.
     out = ROOT / 'results'
     out.mkdir(exist_ok=True)

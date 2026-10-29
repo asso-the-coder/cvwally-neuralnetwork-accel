@@ -38,3 +38,29 @@ def config_desc(config):
     return subprocess.check_output(
         ['make', '-s', '--no-print-directory', f'CONFIG={config_id(config)}', 'config-desc'],
         cwd=ROOT, text=True).strip()
+
+
+def spike_args(config):
+    import shlex
+    return shlex.split(subprocess.check_output(
+        ['make', '-s', '--no-print-directory', f'CONFIG={config_id(config)}', 'config-spike-args'],
+        cwd=ROOT, text=True).strip())
+
+
+def execution_metadata(config):
+    import hashlib
+    import shlex
+    args = spike_args(config)
+    return dict(spike_args=shlex.join(args),
+                extension_source_sha256=hashlib.sha256(
+                    (ROOT / 'src/spike_ext/xqmac.cc').read_bytes()).hexdigest()
+                if '--extension=xqmac' in args else '',
+                repacked_model_sha256=hashlib.sha256(
+                    (ROOT / 'build/model/efficientnet-lite0-int8-aligned.tflite').read_bytes()).hexdigest())
+
+
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser(description='Print one config Spike argument per line')
+    parser.add_argument('--spike-args', type=config_id, required=True)
+    print('\n'.join(spike_args(parser.parse_args().spike_args)))

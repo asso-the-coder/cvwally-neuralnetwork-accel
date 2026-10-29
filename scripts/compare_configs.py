@@ -58,7 +58,7 @@ def compare(directory):
                    reduction_vs_previous=previous / count if previous is not None else '',
                    delta_instr_vs_previous=previous-count if previous is not None else '',
                    mix_scope='whole program')
-        for category in ('load', 'store', 'mul', 'branch', 'alu', 'jump'):
+        for category in ('load', 'store', 'mul', 'branch', 'alu', 'jump', 'custom'):
             row[f'{category}_share'] = float(single(sources['mix'], scope='whole program',
                                                    category=category)['share'])
         row['loads_stores_per_mac'] = float(metric('loads_stores_per_mac', 'whole program'))

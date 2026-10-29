@@ -1,4 +1,7 @@
 #include <climits>
+#ifdef CVW_XQMAC
+#include "src/kernels/xqmac.h"
+#endif
 #include <cstdio>
 #include <cstring>
 #include <initializer_list>
@@ -72,13 +75,15 @@ RuntimeShape Shape(std::initializer_list<int32_t> dims) {
   return RuntimeShape(static_cast<int>(dims.size()), dims.begin());
 }
 
-bool Run(const Case& s, int zero_point, int fill) {
+bool Run(const Case& s, int zero_point, int fill, int misalign = 0) {
+  int8_t* input = ::input + misalign;
+  int8_t* weights = ::weights + misalign;
   const RuntimeShape in = Shape({1, s.h, s.w, s.c});
   const RuntimeShape filter = s.kind == DW ? Shape({1, s.kh, s.kw, s.c}) :
       s.kind == Conv ? Shape({s.oc, 1, 1, s.c}) : Shape({s.oc, s.c});
   const RuntimeShape out = s.kind == FC ? Shape({1, s.oc}) : Shape({1, s.oh, s.ow, s.oc});
   const RuntimeShape bs = Shape({s.oc});
-  if (in.FlatSize() > static_cast<int>(sizeof(input)) || filter.FlatSize() > static_cast<int>(sizeof(weights)) ||
+  if (in.FlatSize() > static_cast<int>((sizeof(::input) - misalign)) || filter.FlatSize() > static_cast<int>((sizeof(::weights) - misalign)) ||
       out.FlatSize() > static_cast<int>(sizeof(actual)) || s.oc > 1280) return false;
   for (int i = 0; i < in.FlatSize(); ++i) input[i] = fill == 0 ? static_cast<int8_t>(static_cast<int>(Random() & 255) - 128) : fill == 1 ? -128 : 127;
   for (int i = 0; i < filter.FlatSize(); ++i) weights[i] = fill == 0 ? static_cast<int8_t>(static_cast<int>(Random() & 255) - 128) : fill == 1 ? -128 : 127;
@@ -93,6 +98,9 @@ bool Run(const Case& s, int zero_point, int fill) {
     shift[i] = -8 - log2_taps / 2 - static_cast<int>(Random() % 2);
   }
   std::memset(actual, 0x5a, out.FlatSize());
+#ifdef CVW_XQMAC
+  const unsigned packed_before = cvw::qmac8_layers, scalar_before = cvw::scalar_layers;
+#endif
   if (s.kind == DW) {
     DepthwiseParams p{};
     p.input_offset = -zero_point; p.output_offset = -7;
@@ -124,6 +132,13 @@ bool Run(const Case& s, int zero_point, int fill) {
     }
   }
   bool ok = true;
+#ifdef CVW_XQMAC
+  if (s.kind != DW) {
+    const bool aligned = !misalign && s.c % 8 == 0;
+    ok = cvw::qmac8_layers == packed_before + aligned &&
+         cvw::scalar_layers == scalar_before + !aligned;
+  }
+#endif
   int saturated = 0;
   for (int i = 0; i < out.FlatSize(); ++i) {
     if (expected[i] == -128 || expected[i] == 127) ++saturated;
@@ -154,6 +169,18 @@ int main() {
       for (int fill = 0; fill < 3; ++fill) ok = Run(s, zp, fill) && ok;
     }
   }
+#ifdef CVW_XQMAC
+  const Case scalar_depth[] = {
+    {-8, Conv, 2, 2, 20, 8, 1, 1, 1, 1, 0, 0, 2, 2},
+    {-9, FC, 1, 1, 13, 8, 1, 1, 1, 1, 0, 0, 1, 1},
+  };
+  for (const auto& s : scalar_depth) ok = Run(s, 17, 0) && ok;
+  const Case unaligned[] = {
+    {-6, Conv, 2, 2, 16, 8, 1, 1, 1, 1, 0, 0, 2, 2},
+    {-7, FC, 1, 1, 16, 8, 1, 1, 1, 1, 0, 0, 1, 1},
+  };
+  for (const auto& s : unaligned) ok = Run(s, 17, 0, 1) && ok;
+#endif
   const int8_t w[] = {127, -128};
   const int32_t b[] = {INT32_MAX, INT32_MIN};
   int32_t f[2];

@@ -5,8 +5,14 @@
 #include "tensorflow/lite/micro/kernels/conv.h"
 #include "tensorflow/lite/micro/kernels/internal/common.h"
 #include "tensorflow/lite/micro/kernels/kernel_util.h"
+#ifdef CVW_XQMAC
+#include "src/kernels/xqmac.h"
+#endif
 namespace cvw {
 using namespace tflite;
+#ifdef CVW_XQMAC
+unsigned qmac8_layers = 0, scalar_layers = 0;
+#endif
 bool FoldBias(int channels, int depth, int32_t offset, const int8_t* weights,
               const int32_t* bias, int32_t* folded) {
   for (int k = 0; k < channels; ++k) {
@@ -24,12 +30,29 @@ void Conv1x1(const ConvParams& p, const int32_t* mult, const int32_t* shift,
              const RuntimeShape& out, int8_t* output) {
   const int depth = in.Dims(3), channels = f.Dims(0);
   const int pixels = out.Dims(0) * out.Dims(1) * out.Dims(2);
+#ifdef CVW_XQMAC
+  const bool packed = ((reinterpret_cast<uintptr_t>(input) |
+                        reinterpret_cast<uintptr_t>(weights) | static_cast<uintptr_t>(depth)) & 7) == 0;
+  if (packed) ++qmac8_layers; else ++scalar_layers;
+#endif
   for (int pixel = 0; pixel < pixels; ++pixel) {
     const int8_t* wt = weights;
     for (int k = 0; k < channels; ++k) {
       const int8_t* x = input;
       int32_t acc = 0;
+#ifdef CVW_XQMAC
+      int c = 0;
+      if (packed) {
+        for (; c + 8 <= depth; c += 8) {
+          acc += cvw_qmac8(cvw_load8(wt), cvw_load8(x));
+          wt += 8;
+          x += 8;
+        }
+      }
+      for (; c < depth; ++c) acc += static_cast<int32_t>(*wt++) * *x++;
+#else
       for (int c = 0; c < depth; ++c) acc += static_cast<int32_t>(*wt++) * *x++;
+#endif
       acc += bias[k];
       acc = tflite::MultiplyByQuantizedMultiplier(acc, mult[k], shift[k]);
       acc += p.output_offset;

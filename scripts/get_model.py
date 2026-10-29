@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fetch the unmodified model and generate deterministic embedded inputs."""
+"""Fetch and align model buffers; verify unchanged tensors and inference outputs."""
 import argparse
 import hashlib
 from pathlib import Path
@@ -44,6 +44,69 @@ def emit(directory, name, arrays):
     (directory / f'{name}.cc').write_text(f'#include "{name}.h"\n' + '\n'.join(definitions) + '\n')
 
 
+def repack_model(raw, inputs):
+    import flatbuffers
+    from ai_edge_litert import schema_py_generated as schema
+    from ai_edge_litert.interpreter import Interpreter, OpResolverType
+
+    class AlignedBuffer(schema.BufferT):
+        def Pack(self, builder):
+            if self.data is not None:
+                # The generated object API omits the schema's force_align on data.
+                builder.Prep(16, len(self.data))
+            return super().Pack(builder)
+
+    original = schema.Model.GetRootAsModel(raw, 0)
+    model = schema.ModelT.InitFromObj(original)
+    for index, buffer in enumerate(model.buffers):
+        if buffer.offset or buffer.size:
+            raise ValueError('External buffers are unsupported')
+        aligned = AlignedBuffer()
+        aligned.__dict__.update(buffer.__dict__)
+        model.buffers[index] = aligned
+    builder = flatbuffers.Builder(len(raw))
+    root = model.Pack(builder)
+    builder.Finish(root, file_identifier=b'TFL3')
+    packed = bytes(builder.Output())
+    result = schema.Model.GetRootAsModel(packed, 0)
+    if original.BuffersLength() != result.BuffersLength():
+        raise ValueError('Buffer count changed')
+    for k in range(result.BuffersLength()):
+        before, after = original.Buffers(k), result.Buffers(k)
+        if before.DataLength() != after.DataLength():
+            raise ValueError(f'Buffer {k} length changed')
+        if after.DataLength():
+            if not np.array_equal(before.DataAsNumpy(), after.DataAsNumpy()):
+                raise ValueError(f'Buffer {k} bytes changed')
+            offset = after._tab.Vector(after._tab.Offset(4))
+            if offset % 16:
+                raise ValueError(f'Buffer {k} is not 16-byte aligned: {offset}')
+    for g in range(original.SubgraphsLength()):
+        a, b = original.Subgraphs(g), result.Subgraphs(g)
+        if a.TensorsLength() != b.TensorsLength():
+            raise ValueError('Tensor count changed')
+        for k in range(a.TensorsLength()):
+            if a.Tensors(k).Buffer() != b.Tensors(k).Buffer():
+                raise ValueError(f'Tensor {g}:{k} buffer changed')
+    outputs = []
+    for content in (raw, packed):
+        interpreter = Interpreter(model_content=content, num_threads=1,
+                                  experimental_op_resolver_type=OpResolverType.BUILTIN_REF)
+        interpreter.allocate_tensors()
+        source = interpreter.get_input_details()[0]['index']
+        target = interpreter.get_output_details()[0]['index']
+        values = []
+        for data in inputs:
+            interpreter.set_tensor(source, data[np.newaxis])
+            interpreter.invoke()
+            values.append(interpreter.get_tensor(target))
+        outputs.append(values)
+    if any(not np.array_equal(a, b) for a, b in zip(*outputs)):
+        raise ValueError('Re-packed model inference differs from original')
+    print('PASS: re-pack buffer bytes, 16-byte alignment, tensor mappings, and 3 reference outputs')
+    return packed
+
+
 def main():
     argparse.ArgumentParser(description=__doc__).parse_args()
     directory = ROOT / 'build/model'
@@ -71,7 +134,10 @@ def main():
                for seed in (1, 2)]
     for k, data in enumerate(inputs):
         np.save(directory / f'input_{k}.npy', data)
-    emit(directory, 'model_data', [('model_data', model.read_bytes())])
+    packed = repack_model(model.read_bytes(), inputs)
+    (directory / 'efficientnet-lite0-int8-aligned.tflite').write_bytes(packed)
+    print('Re-packed sha256: ' + hashlib.sha256(packed).hexdigest())
+    emit(directory, 'model_data', [('model_data', packed)])
     emit(directory, 'inputs', [(f'input_{k}', data) for k, data in enumerate(inputs)])
     print(f'Model and 3 inputs ready: {directory}')
 
