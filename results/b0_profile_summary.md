@@ -1,6 +1,6 @@
 | config | git_commit | git_dirty |
 | --- | --- | --- |
-| B0 | b6e05911dd69a9b7f9e374877ce7c1ae861c92f4 | True |
+| B0 | e0eb12ac75f6db2f47869fd7f549818322a42e41 | False |
 
 | scope | metric | value |
 | --- | --- | --- |
@@ -13,7 +13,7 @@
 | inference / validation | post_counter_tail | 64951 |
 | inference / validation | csr_serialization_retries | 5 |
 | inference / validation | whole_program_instret | 23789945000 |
-| inference / validation | text_size | 5682584 |
+| inference / validation | text_size | 5683000 |
 | inference / validation | linked_text_size | 92168 |
 | inference / validation | data_size | 248 |
 | inference / validation | bss_size | 71565920 |
@@ -23,8 +23,8 @@
 | inference / validation | profiled_minus_headline | 2240 |
 | inference / validation | op_sum_minus_headline | -995 |
 | inference / validation | profiler_overhead_fraction | 9.425942334660268e-08 |
-| inference / validation | spike_histogram_wall_seconds | 580.2298400980071 |
-| inference / validation | spike_profiled_wall_seconds | 106.05499599699397 |
+| inference / validation | spike_histogram_wall_seconds | 573.9403388749924 |
+| inference / validation | spike_profiled_wall_seconds | 106.59686329800752 |
 | whole program | dyn_instr | 23789945005 |
 | whole program | dyn_loads | 4178143819 |
 | whole program | dyn_stores | 99359206 |
