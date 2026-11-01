@@ -1,6 +1,6 @@
 | config | git_commit | git_dirty |
 | --- | --- | --- |
-| B1B | e0eb12ac75f6db2f47869fd7f549818322a42e41 | False |
+| B1B | 0c0f12252b380447d7d359c46cd8d0e5d7153152 | False |
 
 | scope | metric | value |
 | --- | --- | --- |
@@ -23,8 +23,8 @@
 | inference / validation | profiled_minus_headline | 2176 |
 | inference / validation | op_sum_minus_headline | -994 |
 | inference / validation | profiler_overhead_fraction | 5.35182743088722e-07 |
-| inference / validation | spike_histogram_wall_seconds | 106.57894433000183 |
-| inference / validation | spike_profiled_wall_seconds | 23.609127156989416 |
+| inference / validation | spike_histogram_wall_seconds | 112.71423125999718 |
+| inference / validation | spike_profiled_wall_seconds | 24.674230951000936 |
 | whole program | dyn_instr | 4091475007 |
 | whole program | dyn_loads | 979096048 |
 | whole program | dyn_stores | 39918765 |
