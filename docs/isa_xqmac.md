@@ -62,6 +62,10 @@ Operands:
 
 `rs1[31:0]` is the int32 accumulator (bias already added); `rs1[63:32]` is ignored.
 
+Shift values outside -31 ... 30 are reserved: the result is unspecified and software must not use them
+(the kernels check every layer's shift at setup and fall back to the scalar path otherwise). `M` and the
+other fields have no reserved values; the semantics below apply to any bit pattern.
+
 Semantics: the TFLM/gemmlowp reference `MultiplyByQuantizedMultiplier` (double rounding), then offset and clamp:
 
 ```

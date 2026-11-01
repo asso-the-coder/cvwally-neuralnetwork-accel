@@ -41,7 +41,7 @@ if [[ $status -gt 0 && $status -lt 124 ]] &&
 else
     fail "illegal_fp (exit $status)"
 fi
-for config in b1c x1; do
+for config in b1c x1 x2; do
     args_text=$(python3 scripts/configs.py --spike-args "$config")
     mapfile -t kernel_args <<< "$args_text"
     if make CONFIG="$config" kernel-tests &&
@@ -69,7 +69,25 @@ if [[ $status -gt 0 && $status -lt 124 ]] &&
 else
     fail "qmac8 negative test (exit $status)"
 fi
-elfs=(build/b0/baremetal/hello.elf build/b1c/kernel_tests.elf build/x1/kernel_tests.elf build/x1/xqmac_tests.elf)
+args_text=$(python3 scripts/configs.py --spike-args x2)
+mapfile -t x2_args <<< "$args_text"
+if python3 scripts/rqnt_golden.py && make CONFIG=x2 rqnt-tests &&
+    timeout -k 2s 60s "$SPIKE" "${x2_args[@]}" build/x2/rqnt_tests.elf > build/x2/rqnt_tests.log 2>&1; then
+    cat build/x2/rqnt_tests.log
+    pass 'rqnt instruction and C fallback'
+else
+    cat build/x2/rqnt_tests.log 2>/dev/null || true
+    fail 'rqnt instruction and C fallback'
+fi
+status=0
+timeout -k 2s 30s "$SPIKE" "${plain_args[@]}" build/x2/rqnt_tests.elf > build/x2/rqnt_negative.log 2>&1 || status=$?
+if [[ $status -gt 0 && $status -lt 124 ]] &&
+    grep -Eq '^trap: mcause=0x0*2 mepc=0x[0-9a-f]+ mtval=0x[0-9a-f]+$' build/x2/rqnt_negative.log; then
+    pass 'rqnt illegal on plain RV64IMC'
+else
+    fail "rqnt negative test (exit $status)"
+fi
+elfs=(build/x2/kernel_tests.elf build/x2/rqnt_tests.elf build/b0/baremetal/hello.elf build/b1c/kernel_tests.elf build/x1/kernel_tests.elf build/x1/xqmac_tests.elf)
 for config in "${configs[@]}"; do
     elfs+=(build/"$config"/model_{0,1,2}.elf build/"$config"/model_prof_0.elf)
 done
@@ -108,7 +126,7 @@ else
 fi
 for config in "${configs[@]}"; do
     model_args=()
-    if [[ $config == x1 ]]; then model_args+=(--all); fi
+    if [[ $config == x1 || $config == x2 ]]; then model_args+=(--all); fi
     if python3 scripts/check_model.py --config "$config" "${model_args[@]}" --output "build/$config/test_results.csv"; then
         pass "$config full model (real image, bit-exact BUILTIN_REF)"
     else

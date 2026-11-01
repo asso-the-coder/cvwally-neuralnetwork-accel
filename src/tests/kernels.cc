@@ -68,6 +68,9 @@ const Case layers[] = {
 };
 alignas(16) int8_t input[1204224], weights[1280000], expected[1204224], actual[1204224];
 int32_t bias[1280], folded[1280], multiplier[1280], shift[1280];
+#ifdef CVW_RQNT
+alignas(16) uint64_t rqnt_table[1280];
+#endif
 uint32_t state = 0x005b1b1c;
 uint32_t Random() { state ^= state << 13; state ^= state >> 17; state ^= state << 5; return state; }
 
@@ -75,7 +78,11 @@ RuntimeShape Shape(std::initializer_list<int32_t> dims) {
   return RuntimeShape(static_cast<int>(dims.size()), dims.begin());
 }
 
-bool Run(const Case& s, int zero_point, int fill, int misalign = 0) {
+bool Run(const Case& s, int zero_point, int fill, int misalign = 0
+#ifdef CVW_RQNT
+         , bool scalar_rqnt = false
+#endif
+         ) {
   int8_t* input = ::input + misalign;
   int8_t* weights = ::weights + misalign;
   const RuntimeShape in = Shape({1, s.h, s.w, s.c});
@@ -97,6 +104,12 @@ bool Run(const Case& s, int zero_point, int fill, int misalign = 0) {
     multiplier[i] = 0x40000000 + (Random() & 0x3fffffff);
     shift[i] = -8 - log2_taps / 2 - static_cast<int>(Random() % 2);
   }
+#ifdef CVW_RQNT
+  const unsigned rqnt_before = cvw::rqnt_layers, rqnt_scalar_before = cvw::rqnt_scalar_layers;
+  for (int k = 0; k < s.oc; ++k)
+    rqnt_table[k] = cvw_rqnt_pack(multiplier[k], shift[k], -7, -128, 127);
+  const uint64_t* rqnt = scalar_rqnt ? nullptr : rqnt_table;
+#endif
   std::memset(actual, 0x5a, out.FlatSize());
 #ifdef CVW_XQMAC
   const unsigned packed_before = cvw::qmac8_layers, scalar_before = cvw::scalar_layers;
@@ -110,7 +123,11 @@ bool Run(const Case& s, int zero_point, int fill, int misalign = 0) {
     p.quantized_activation_min = -128; p.quantized_activation_max = 127;
     micro::reference_integer_ops::DepthwiseConvPerChannel(p, multiplier, shift, in, input,
         filter, weights, bs, bias, out, expected);
-    cvw::Depthwise(p, multiplier, shift, in, input, filter, weights, bias, out, actual);
+    cvw::Depthwise(p, multiplier, shift, in, input, filter, weights, bias, out, actual
+#ifdef CVW_RQNT
+        , rqnt
+#endif
+        );
   } else {
     if (!cvw::FoldBias(s.oc, s.c, -zero_point, weights, bias, folded)) return false;
     if (s.kind == Conv) {
@@ -121,14 +138,22 @@ bool Run(const Case& s, int zero_point, int fill, int misalign = 0) {
       p.quantized_activation_min = -128; p.quantized_activation_max = 127;
       micro::reference_integer_ops::ConvPerChannel(p, multiplier, shift, in, input,
           filter, weights, bs, bias, out, expected);
-      cvw::Conv1x1(p, multiplier, shift, in, input, filter, weights, folded, out, actual);
+      cvw::Conv1x1(p, multiplier, shift, in, input, filter, weights, folded, out, actual
+#ifdef CVW_RQNT
+        , rqnt
+#endif
+        );
     } else {
       FullyConnectedParams p{};
       p.input_offset = -zero_point; p.output_offset = -7;
       p.output_multiplier = multiplier[0]; p.output_shift = shift[0];
       p.quantized_activation_min = -128; p.quantized_activation_max = 127;
       micro::reference_integer_ops::FullyConnected(p, in, input, filter, weights, bs, bias, out, expected);
-      cvw::FullyConnected(p, in, input, filter, weights, folded, out, actual);
+      cvw::FullyConnected(p, in, input, filter, weights, folded, out, actual
+#ifdef CVW_RQNT
+        , rqnt
+#endif
+        );
     }
   }
   bool ok = true;
@@ -138,6 +163,10 @@ bool Run(const Case& s, int zero_point, int fill, int misalign = 0) {
     ok = cvw::qmac8_layers == packed_before + aligned &&
          cvw::scalar_layers == scalar_before + !aligned;
   }
+#endif
+#ifdef CVW_RQNT
+  ok = ok && cvw::rqnt_layers == rqnt_before + !scalar_rqnt &&
+       cvw::rqnt_scalar_layers == rqnt_scalar_before + scalar_rqnt;
 #endif
   int saturated = 0;
   for (int i = 0; i < out.FlatSize(); ++i) {
@@ -180,6 +209,26 @@ int main() {
     {-7, FC, 1, 1, 16, 8, 1, 1, 1, 1, 0, 0, 1, 1},
   };
   for (const auto& s : unaligned) ok = Run(s, 17, 0, 1) && ok;
+#endif
+#ifdef CVW_RQNT
+  // Exercise the null-table path on each kernel, independently of qmac alignment.
+  for (const auto& s : directed) ok = Run(s, 17, 0, 0, true) && ok;
+  int32_t m[] = {0, INT32_MAX}, sh[] = {-31, 30};
+  bool ranges = cvw::RqntFieldsFit(2, m, sh, -128, -128, 127);
+  for (int field = 0; field < 5; ++field) {
+    for (int edge = 0; edge < 2; ++edge) {
+      int32_t mm[] = {0, INT32_MAX}, ss[] = {-31, 30};
+      int zp = 0, lo = -128, hi = 127;
+      if (field == 0) mm[edge] = -1;
+      if (field == 1) ss[edge] = edge ? 31 : -32;
+      if (field == 2) zp = edge ? 128 : -129;
+      if (field == 3) lo = edge ? 128 : -129;
+      if (field == 4) hi = edge ? 128 : -129;
+      ranges = !cvw::RqntFieldsFit(2, mm, ss, zp, lo, hi) && ranges;
+    }
+  }
+  std::printf("%s: rqnt field bounds\n", ranges ? "PASS" : "FAIL");
+  ok = ranges && ok;
 #endif
   const int8_t w[] = {127, -128};
   const int32_t b[] = {INT32_MAX, INT32_MIN};

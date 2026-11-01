@@ -114,6 +114,15 @@ xqmac-tests: $(BUILD)/xqmac_tests.elf
 microbench: $(BUILD)/microbench.elf
 $(BUILD)/xqmac_tests.elf: $(BUILD)/tests/xqmac.o $(BUILD)/runtime/crt0.o $(BUILD)/runtime/htif.o $(BUILD)/runtime/syscalls.o src/runtime/link.ld
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(filter %.o,$^) -o $@
-$(BUILD)/microbench.elf: $(BUILD)/tests/microbench.o $(BUILD)/runtime/crt0.o $(BUILD)/runtime/htif.o $(BUILD)/runtime/syscalls.o src/runtime/link.ld
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(filter %.o,$^) -o $@
+$(BUILD)/microbench.elf: $(BUILD)/tests/microbench.o $(BUILD)/runtime/crt0.o $(BUILD)/runtime/htif.o $(BUILD)/runtime/syscalls.o $(BUILD)/libtflm.a src/runtime/link.ld
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(filter %.o %.a,$^) -o $@
 -include $(BUILD)/tests/xqmac.d $(BUILD)/tests/microbench.d
+
+.PHONY: rqnt-tests
+build/xqmac/rqnt_vectors.h: scripts/rqnt_golden.py build/model/efficientnet-lite0-int8.tflite
+	python3 $< --output $@
+$(BUILD)/tests/rqnt.o: build/xqmac/rqnt_vectors.h
+rqnt-tests: $(BUILD)/rqnt_tests.elf
+$(BUILD)/rqnt_tests.elf: $(BUILD)/tests/rqnt.o $(BUILD)/runtime/crt0.o $(BUILD)/runtime/htif.o $(BUILD)/runtime/syscalls.o $(BUILD)/libtflm.a src/runtime/link.ld
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(filter %.o %.a,$^) -o $@
+-include $(BUILD)/tests/rqnt.d

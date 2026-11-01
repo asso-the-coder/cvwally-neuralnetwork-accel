@@ -32,6 +32,16 @@ def classify(raw, mnemonic):
     return LOOKUP.get(mnemonic, 'other')
 
 
+def custom_name(raw):
+    if len(raw) == 8:
+        opcode = int(raw, 16) & 0xfe00707f
+        if opcode == 0x0000000b:
+            return 'qmac8'
+        if opcode == 0x0000100b:
+            return 'rqnt'
+    return None
+
+
 def disassembly(text):
     instructions = {}
     for line in text.splitlines():
@@ -78,6 +88,8 @@ def self_test():
     for opcode in (0x0b, 0x2b, 0x5b, 0x7b):
         if classify(f'{opcode:08x}', '.4byte') != 'custom':
             raise ValueError('Custom opcode mismatch')
+    if custom_name('00b5100b') != 'rqnt' or custom_name('00b5000b') != 'qmac8' or custom_name('0200100b') is not None:
+        raise ValueError('Xqmac funct3/funct7 mismatch')
     if histogram('PC Histogram size:2\n1000 1\n1004 2\n') != {4096: 1, 4100: 2}:
         raise ValueError('Histogram parser mismatch')
     print('PASS: instruction classifier, widths, custom opcodes, histogram parser')

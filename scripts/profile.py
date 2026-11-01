@@ -32,7 +32,7 @@ import numpy as np
 from count_macs import count_macs
 from get_model import ROOT, pins
 from configs import config_id, git_state, spike_args, execution_metadata
-from profile_mix import CATEGORIES, disassembly, histogram
+from profile_mix import CATEGORIES, disassembly, histogram, custom_name
 
 
 def command(args):
@@ -199,6 +199,7 @@ def main():
     starts = [s[0] for s in syms]
     whole, kernels, functions = Counter(), Counter(), defaultdict(Counter)
     compressed = Counter()
+    customs = Counter()
     sizes, unknown = {}, Counter()
     for pc, n in hist.items():
         if pc not in decoded:
@@ -213,6 +214,8 @@ def main():
             raise ValueError(f'Executed PC outside function symbols: {pc:#x}')
         sizes[name] = size
         whole[cat] += n
+        if custom_name(raw):
+            customs[custom_name(raw)] += n
         functions[name][cat] += n
         if cat == 'other':
             unknown[mnemonic] += n
@@ -286,6 +289,16 @@ def main():
                    profiler_overhead_fraction=(prof_result[1]-result[1])/result[1],
                    spike_histogram_wall_seconds=wall,
                    spike_profiled_wall_seconds=prof_wall)
+    if args.config == 'x2':
+        metrics.update(instret_setup=int(field(text, r'^instret_setup=(\d+)$')),
+                       rqnt_layers=int(field(text, r'^rqnt_layers=(\d+) ')),
+                       rqnt_scalar_layers=int(field(text, r' rqnt_scalar_layers=(\d+) ')),
+                       rqnt_table_bytes=int(field(text, r' rqnt_table_bytes=(\d+)$')),
+                       qmac8_count=customs['qmac8'], rqnt_count=customs['rqnt'])
+        eligible = [r for r in ops if r['type'] in ('DEPTHWISE_CONV_2D', 'FULLY_CONNECTED') or
+                    (r['type'] == 'CONV_2D' and r['conv_kind'] == '1x1')]
+        if metrics['rqnt_scalar_layers'] == 0 and customs['rqnt'] != sum(r['elements'] for r in eligible):
+            raise ValueError('rqnt frequency differs from analytical output count')
     summary = [dict(scope='inference / validation', metric=k, value=v) for k, v in metrics.items()]
     for scope, counts in [('whole program', whole), ('kernel functions', kernels)]:
         n = sum(counts.values())

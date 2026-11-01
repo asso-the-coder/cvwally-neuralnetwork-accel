@@ -11,7 +11,14 @@ namespace cvw {
 using namespace tflite;
 void FullyConnected(const FullyConnectedParams& p, const RuntimeShape&,
                     const int8_t* input, const RuntimeShape& f, const int8_t* weights,
-                    const int32_t* bias, const RuntimeShape& out, int8_t* output) {
+                    const int32_t* bias, const RuntimeShape& out, int8_t* output
+#ifdef CVW_RQNT
+             , const uint64_t* rqnt
+#endif
+             ) {
+#ifdef CVW_RQNT
+  if (rqnt) ++rqnt_layers; else ++rqnt_scalar_layers;
+#endif
   const int depth = f.Dims(f.DimensionsCount() - 1);
   const int channels = out.Dims(out.DimensionsCount() - 1);
   const int batches = out.FlatSize() / channels;
@@ -39,16 +46,27 @@ void FullyConnected(const FullyConnectedParams& p, const RuntimeShape&,
       for (int c = 0; c < depth; ++c) acc += static_cast<int32_t>(*wt++) * *x++;
 #endif
       acc += bias[k];
-      acc = tflite::MultiplyByQuantizedMultiplier(acc, p.output_multiplier, p.output_shift);
-      acc += p.output_offset;
-      acc = std::max(p.quantized_activation_min, std::min(p.quantized_activation_max, acc));
+#ifdef CVW_RQNT
+      if (rqnt) {
+        acc = cvw_rqnt(acc, rqnt[0]);
+      } else
+#endif
+      {
+        acc = tflite::MultiplyByQuantizedMultiplier(acc, p.output_multiplier, p.output_shift);
+        acc += p.output_offset;
+        acc = std::max(p.quantized_activation_min, std::min(p.quantized_activation_max, acc));
+      }
       *output++ = static_cast<int8_t>(acc);
     }
     input += depth;
   }
 }
 namespace {
-struct Data { OpDataFullyConnected reference; int32_t* folded; };
+struct Data { OpDataFullyConnected reference; int32_t* folded;
+#ifdef CVW_RQNT
+  uint64_t* rqnt;
+#endif
+};
 void* Init(TfLiteContext* ctx, const char*, size_t) {
   void* memory = ctx->AllocatePersistentBuffer(ctx, sizeof(Data));
   return memory ? new (memory) Data{} : nullptr;
@@ -71,6 +89,11 @@ TfLiteStatus Prepare(TfLiteContext* ctx, TfLiteNode* node) {
                         micro::GetTensorData<int8_t>(filter), micro::GetTensorData<int32_t>(bias), folded)) {
     d.folded = folded;
   }
+#ifdef CVW_RQNT
+  if (d.folded) d.rqnt = PrepareRqnt(ctx, 1, &d.reference.output_multiplier, &d.reference.output_shift,
+      d.reference.output_zero_point, d.reference.output_activation_min,
+      d.reference.output_activation_max);
+#endif
   return kTfLiteOk;
 }
 TfLiteStatus Eval(TfLiteContext* ctx, TfLiteNode* node) {
@@ -82,7 +105,11 @@ TfLiteStatus Eval(TfLiteContext* ctx, TfLiteNode* node) {
   FullyConnected(micro::FullyConnectedParamsQuantized(d.reference), micro::GetTensorShape(input),
                  micro::GetTensorData<int8_t>(input), micro::GetTensorShape(filter),
                  micro::GetTensorData<int8_t>(filter), d.folded,
-                 micro::GetTensorShape(output), micro::GetTensorData<int8_t>(output));
+                 micro::GetTensorShape(output), micro::GetTensorData<int8_t>(output)
+#ifdef CVW_RQNT
+          , d.rqnt
+#endif
+          );
   return kTfLiteOk;
 }
 }

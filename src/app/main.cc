@@ -82,6 +82,10 @@ int main() {
 #ifdef CVW_XQMAC
     std::printf("qmac8_layers=%u scalar_layers=%u\n", cvw::qmac8_layers, cvw::scalar_layers);
 #endif
+#ifdef CVW_RQNT
+    std::printf("rqnt_layers=%u rqnt_scalar_layers=%u rqnt_table_bytes=%u\n",
+                cvw::rqnt_layers, cvw::rqnt_scalar_layers, cvw::rqnt_table_bytes);
+#endif
     // Nano printf does not support long long; RV64 unsigned long is 64 bits.
     std::printf("instret_invoke=%lu\n", static_cast<unsigned long>(end - start));
 #ifdef PROFILE_OPS

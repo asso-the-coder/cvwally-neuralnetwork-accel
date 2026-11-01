@@ -13,6 +13,25 @@ using namespace tflite;
 #ifdef CVW_XQMAC
 unsigned qmac8_layers = 0, scalar_layers = 0;
 #endif
+#ifdef CVW_RQNT
+unsigned rqnt_layers = 0, rqnt_scalar_layers = 0, rqnt_table_bytes = 0;
+bool RqntFieldsFit(int channels, const int32_t* mult, const int32_t* shift,
+                   int zp, int lo, int hi) {
+  if (zp < -128 || zp > 127 || lo < -128 || lo > 127 || hi < -128 || hi > 127) return false;
+  for (int k = 0; k < channels; ++k)
+    if (mult[k] < 0 || shift[k] < -31 || shift[k] > 30) return false;
+  return true;
+}
+uint64_t* PrepareRqnt(TfLiteContext* ctx, int channels, const int32_t* mult,
+                      const int32_t* shift, int zp, int lo, int hi) {
+  if (!RqntFieldsFit(channels, mult, shift, zp, lo, hi)) return nullptr;
+  auto* table = static_cast<uint64_t*>(ctx->AllocatePersistentBuffer(ctx, channels * sizeof(uint64_t)));
+  if (!table) return nullptr;
+  for (int k = 0; k < channels; ++k) table[k] = cvw_rqnt_pack(mult[k], shift[k], zp, lo, hi);
+  rqnt_table_bytes += channels * sizeof(uint64_t);
+  return table;
+}
+#endif
 bool FoldBias(int channels, int depth, int32_t offset, const int8_t* weights,
               const int32_t* bias, int32_t* folded) {
   for (int k = 0; k < channels; ++k) {
@@ -27,7 +46,14 @@ bool FoldBias(int channels, int depth, int32_t offset, const int8_t* weights,
 void Conv1x1(const ConvParams& p, const int32_t* mult, const int32_t* shift,
              const RuntimeShape& in, const int8_t* input, const RuntimeShape& f,
              const int8_t* weights, const int32_t* bias,
-             const RuntimeShape& out, int8_t* output) {
+             const RuntimeShape& out, int8_t* output
+#ifdef CVW_RQNT
+             , const uint64_t* rqnt
+#endif
+             ) {
+#ifdef CVW_RQNT
+  if (rqnt) ++rqnt_layers; else ++rqnt_scalar_layers;
+#endif
   const int depth = in.Dims(3), channels = f.Dims(0);
   const int pixels = out.Dims(0) * out.Dims(1) * out.Dims(2);
 #ifdef CVW_XQMAC
@@ -54,9 +80,16 @@ void Conv1x1(const ConvParams& p, const int32_t* mult, const int32_t* shift,
       for (int c = 0; c < depth; ++c) acc += static_cast<int32_t>(*wt++) * *x++;
 #endif
       acc += bias[k];
-      acc = tflite::MultiplyByQuantizedMultiplier(acc, mult[k], shift[k]);
-      acc += p.output_offset;
-      acc = std::max(p.quantized_activation_min, std::min(p.quantized_activation_max, acc));
+#ifdef CVW_RQNT
+      if (rqnt) {
+        acc = cvw_rqnt(acc, rqnt[k]);
+      } else
+#endif
+      {
+        acc = tflite::MultiplyByQuantizedMultiplier(acc, mult[k], shift[k]);
+        acc += p.output_offset;
+        acc = std::max(p.quantized_activation_min, std::min(p.quantized_activation_max, acc));
+      }
       *output++ = static_cast<int8_t>(acc);
     }
     input += depth;
@@ -64,7 +97,11 @@ void Conv1x1(const ConvParams& p, const int32_t* mult, const int32_t* shift,
 }
 namespace {
 // The first member preserves the upstream Prepare/Eval user_data layout.
-struct Data { OpDataConv reference; int32_t* folded; };
+struct Data { OpDataConv reference; int32_t* folded;
+#ifdef CVW_RQNT
+  uint64_t* rqnt;
+#endif
+};
 void* Init(TfLiteContext* ctx, const char*, size_t) {
   void* memory = ctx->AllocatePersistentBuffer(ctx, sizeof(Data));
   return memory ? new (memory) Data{} : nullptr;
@@ -93,6 +130,12 @@ TfLiteStatus Prepare(TfLiteContext* ctx, TfLiteNode* node) {
                         micro::GetTensorData<int8_t>(filter), micro::GetTensorData<int32_t>(bias), folded)) {
     d.folded = folded;
   }
+#ifdef CVW_RQNT
+  if (d.folded) d.rqnt = PrepareRqnt(ctx, channels, d.reference.per_channel_output_multiplier,
+        d.reference.per_channel_output_shift,
+      d.reference.output_zero_point, d.reference.output_activation_min,
+      d.reference.output_activation_max);
+#endif
   return kTfLiteOk;
 }
 TfLiteStatus Eval(TfLiteContext* ctx, TfLiteNode* node) {
@@ -106,7 +149,11 @@ TfLiteStatus Eval(TfLiteContext* ctx, TfLiteNode* node) {
           d.reference.per_channel_output_shift, micro::GetTensorShape(input),
           micro::GetTensorData<int8_t>(input), micro::GetTensorShape(filter),
           micro::GetTensorData<int8_t>(filter), d.folded,
-          micro::GetTensorShape(output), micro::GetTensorData<int8_t>(output));
+          micro::GetTensorShape(output), micro::GetTensorData<int8_t>(output)
+#ifdef CVW_RQNT
+          , d.rqnt
+#endif
+          );
   return kTfLiteOk;
 }
 }
