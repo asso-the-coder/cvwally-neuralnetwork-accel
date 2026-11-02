@@ -54,7 +54,7 @@ model URL + SHA256).
    scripts/get_tflm.sh
    ```
 
-3. **Short tests** (a few minutes). These check:
+3. **Short tests** (about 7 minutes). These check:
    - bare-metal runtime tests
    - `qmac8` and `rqnt` against their Python golden models (directed edge cases + 10,000 fixed-seed random vectors
      each), and the C fallbacks
@@ -66,6 +66,9 @@ model URL + SHA256).
    ```bash
    scripts/run_tests.sh        # prints PASS/FAIL per check, non-zero exit on any failure
    ```
+
+   Two runtime tests exit with a non-zero code on purpose (`exitcode` and `illegal_fp`), so Spike prints
+   `*** FAILED *** (tohost = …)` just before their `PASS` line. This is expected.
 
 4. **Full benchmark** (about 30 minutes with `JOBS=4`). Builds every config in `experiments/order.txt`, then runs:
    - the full model on three fixed inputs (photograph + two seeded random images), each bit-exact checked
