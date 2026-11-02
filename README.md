@@ -122,4 +122,4 @@ Microbenchmarks (`results/microbench.csv`, 1,280 elements):
 
 ## Slides
 
-Midterm slides (Google Slides): _link added on publication_.
+Midterm slides (Google Slides): <https://docs.google.com/presentation/d/1E-dop-tmm71aeBwWLoYl4DTF1scwclDxYprnOoqYiJY/edit?usp=sharing>
